@@ -38,3 +38,33 @@ Inspected actual X11 captures of Setup, Review and Export. Stacked the two objec
 The rebuilt ZIP installed in the isolated Blender 5.1.2 profile. The example and two-piece rollback tests passed again. tests/transforms.py verified evaluated body shape-key mix on a translated, rotated and nonuniformly scaled rig, matching world-space output in bind pose and refusal to write an incomplete FBX with a hidden garment. tests/guides_ui.py drove two native viewport mouse clicks on the example and verified creation, redraw and removal of their guide pair. The first guide-test assertion incorrectly subtracted Blender property arrays; converting those arrays to vectors corrected the test and the rerun passed.
 
 Added installation, example, fitting and recovery instructions in README.md. The next step is to verify the distribution and portable Git checkpoint, then continue with representative avatar asset testing when licensed inputs are available.
+
+## November 21, 2026 — Distribution checkpoint
+
+The release installer was rebuilt from the current extension sources, validated, installed into the isolated profile and exercised by the fixture, recovery, transformed-avatar and native-guide checks. The distributed Hock-gaiter.blend reopened in Blender 5.1.2 with Digitigrade leg and Trail gaiter preselected in Setup. Packaging is local. There is no configured Git remote.
+
+Release fingerprints:
+
+    ad963bcb1b65408b13c13221b99e6ecaa0e639b6d5058a10c47fe33f975a65bf  seamfit-0.1.0.zip
+    f56878c517606b05fbf696210d08acb6caffe589ddcec9c660b242c6caf7834c  Hock-gaiter.blend
+
+### Reproduce the installed-build checks
+
+From the repository root, set BLENDER to the official 5.1 executable. The following commands use the existing managed-workspace profile. On a fresh machine, enable RWT and its dependencies in that profile, or put the extracted robust-weight-transfer-libigl26 folder inside the directory named by SEAMFIT_RWT_PARENT and point SEAMFIT_RWT_DEPS to its Blender-compatible Python libraries. The defaults are ./upstream and ./rwt-deps. The original sources are the Blender release archive and the RWT v1.1.9 GitHub release named in README.md.
+
+    BLENDER=./blender-5.1.2-linux-x64/blender
+    export BLENDER_USER_RESOURCES="$PWD/clean-profile"
+    export SEAMFIT_REQUIRE_INSTALLED=1 OPENBLAS_NUM_THREADS=1
+    "$BLENDER" --command extension build --source-dir seamfit --output-dir ../output
+    "$BLENDER" --command extension validate ../output/seamfit-0.1.0.zip
+    "$BLENDER" --command extension install-file --repo user_default --enable ../output/seamfit-0.1.0.zip
+    "$BLENDER" -b --python-exit-code 1 --python trial.py
+    "$BLENDER" -b --python-exit-code 1 --python tests/recovery.py
+    "$BLENDER" -b --python-exit-code 1 --python tests/transforms.py
+    "$BLENDER" --enable-event-simulate Hock-gaiter.blend --python tests/guides_ui.py
+
+Each test prints PASS on completion. The graphical test requires a display. The recovery test deliberately emits upstream errors for the induced failed transfer before its successful retry. The output ZIP is an installer. The development archive contains the tracked source tree and a full Git bundle. Extract it and use the clone command in README.md to restore history.
+
+### Handoff
+
+Start with AGENTS.md, git status and git log. The next product milestone is validation against representative licensed avatar/garment pairs and Unity import, as specified in PLAN.md. Report any regression on the original example separately from asset-specific fit tuning. Named avatars, other platforms and broad user testing remain unverified. The managed workspace exposes the delivered files in /workspace/output.

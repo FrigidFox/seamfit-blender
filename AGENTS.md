@@ -19,3 +19,7 @@ Start in the directory containing this file and the seamfit package. In the mana
 - seamfit/guides.py draws picked guide pairs in the viewport.
 - seamfit/blender_manifest.toml declares the Blender extension and its minimum version.
 - trial.py generates the original digitigrade example, then exercises fitting through FBX reimport. See PROGRESS.md for the last successful run.
+
+- tests/recovery.py and tests/transforms.py open the generated example in a separate process and verify rollback, retry, binding and visibility.
+- tests/guides_ui.py requires a graphical Blender process with --enable-event-simulate. Verify its PASS line in the log.
+- README.md contains the user installation and fitting guide. Package only the seamfit directory as a Blender extension. Keep the project handoff separate from the installer.

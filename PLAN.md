@@ -24,6 +24,11 @@ Deliver a guided Blender 5.1 extension for fitting VRChat clothing to an avatar 
 | --- | --- | --- |
 | Native workflow | Installable 5.1 extension, staged sidebar, adjustable fit, actual RWT invocation | Implemented |
 | Export verification | Digitigrade fixture goes through weight transfer, deforms when posed, reimports from FBX with materials, UVs and bone hierarchy | Verified on generated fixture |
-| Reliability and interface | Exercise failure recovery, retry, multi-piece input and sidebar stages on the packaged build | In progress |
-| Distribution | Rebuild from verified source, provide starter scene and portable continuity checkpoint | In progress |
+| Reliability and interface | Exercise failure recovery, retry, multi-piece input and sidebar stages on the packaged build | Verified on Blender 5.1.2/Linux |
+| Distribution | Rebuild from verified source, provide starter scene and portable continuity checkpoint | Installer and example verified. Git checkpoint and restore procedure documented in PROGRESS.md |
 | Named avatars | Fit representative licensed garments to each named base, record settings, review rest and posed results | Requires assets and fit review |
+
+
+## Next validation milestone
+
+With a licensed target body, armature and source garment, record the exact asset version, rest pose, shape-key mix, garment type, chosen landmarks and fit settings. Inspect the rest fit and at least one representative joint bend. Compare silhouette and clipping before and after fitting, then import the exported FBX into Unity. Record per-avatar evidence in PROGRESS.md. Repeat for the remaining bases as assets become available. The original digitigrade example is the regression baseline.
