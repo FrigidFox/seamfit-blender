@@ -2,6 +2,8 @@
 
 Fit clothing to a rigged VRChat avatar, transfer skin weights with SentFromSpaceVR’s Robust Weight Transfer, and export a clothing-only FBX with the target skeleton.
 
+**[Download the Blender installer](https://raw.githubusercontent.com/FrigidFox/seamfit-blender/downloads/seamfit-0.2.0.zip)** · [Illustrated workflow guide](https://github.com/FrigidFox/seamfit-blender/blob/downloads/Seamfit-Workflow-0.2.0.pdf) · [Example Blender scene](https://raw.githubusercontent.com/FrigidFox/seamfit-blender/downloads/Hock-gaiter.blend)
+
 ## Fitting shorts
 
 Choose **Avatar body** and **Clothing**, roughly position the waistband and leg openings, and click **Fit clothing**. The default keeps loose fabric in place while pushing out clipping. In Review, use **Fix clipping** if the check finds intersections. Click **Recheck fit** after manual edits. When the waistband, crotch and hems look right, choose **Bind clothing to rig**, then **Export clothing FBX**.
