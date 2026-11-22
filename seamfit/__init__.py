@@ -38,7 +38,7 @@ class SF_Settings(bpy.types.PropertyGroup):
                              description="Desired space above the body surface")
     travel: FloatProperty(name="Max correction", default=0.12, min=0.000001, soft_max=0.5,
                           subtype='DISTANCE', unit='LENGTH', description="Maximum per-vertex surface correction after guide alignment")
-    conform: FloatProperty(name="Pull loose fabric closer", subtype='FACTOR', default=0.22,
+    conform: FloatProperty(name="Pull loose fabric closer", subtype='FACTOR', default=0.0,
                            min=0, max=1, description="Zero preserves loose fabric. One brings fabric toward the clearance distance")
     match_distance: FloatProperty(name="Match distance", default=0.05, min=0.00001, soft_max=0.25,
                                   unit='LENGTH', subtype='DISTANCE', description="Maximum distance Robust Weight Transfer uses to find a direct body match")
@@ -50,7 +50,7 @@ class SF_Settings(bpy.types.PropertyGroup):
     origin: PointerProperty(type=bpy.types.Scene)
     rig: PointerProperty(type=bpy.types.Object)
     suspects: IntProperty(default=-1)
-    advanced: BoolProperty(name="Fit controls", default=False)
+    advanced: BoolProperty(name="More fit options", default=False)
     show_guides: BoolProperty(name="Alignment guides", default=False)
     message: StringProperty()
 
@@ -160,7 +160,7 @@ class SF_Action:
 
 class SF_OT_preview(SF_Action, bpy.types.Operator):
     bl_idname = "seamfit.preview"
-    bl_label = "Preview fit"
+    bl_label = "Fit clothing"
     bl_description = "Fit evaluated copies of the selected garments in a separate scene"
     stage = 'SETUP'
 
@@ -170,13 +170,13 @@ class SF_OT_preview(SF_Action, bpy.types.Operator):
 
 class SF_OT_check(SF_Action, bpy.types.Operator):
     bl_idname = "seamfit.check"
-    bl_label = "Check intersections"
+    bl_label = "Recheck fit"
     bl_description = "Check garment vertices against the nearest body normal. Select flagged vertices for inspection in Edit Mode"
     stage = 'FIT'
 
     def run(self, context):
         s = context.scene.seamfit
-        tree = body_surface(s.body, s.region)
+        tree = body_surface(s.body)
         total = 0
         first = None
         for obj in session.clothes(context.scene):
@@ -198,7 +198,7 @@ class SF_OT_check(SF_Action, bpy.types.Operator):
 
 class SF_OT_relieve(SF_Action, bpy.types.Operator):
     bl_idname = "seamfit.relieve"
-    bl_label = "Push fabric clear"
+    bl_label = "Fix clipping"
     bl_description = "Apply another outward clearance pass to the current clothing"
     bl_options = {'UNDO'}
     stage = 'FIT'
@@ -208,12 +208,16 @@ class SF_OT_relieve(SF_Action, bpy.types.Operator):
         tree = body_surface(s.body, s.region)
         for obj in session.clothes(context.scene):
             adjust(obj, tree, s, tighten=False)
-        s.suspects = sum(len(suspect_vertices(o, tree)) for o in session.clothes(context.scene))
+        whole_body = body_surface(s.body) if s.region else tree
+        remaining = sum(len(suspect_vertices(o, whole_body)) for o in session.clothes(context.scene))
+        if remaining and remaining >= s.suspects > 0:
+            self.report({'WARNING'}, "Some fabric still crosses the body. Click Recheck fit and enter Edit Mode to adjust the selected area.")
+        s.suspects = remaining
 
 
 class SF_OT_finish(SF_Action, bpy.types.Operator):
     bl_idname = "seamfit.finish"
-    bl_label = "Transfer weights & finish"
+    bl_label = "Bind clothing to rig"
     bl_description = "Run Robust Weight Transfer, verify every vertex and build a clean export scene"
     stage = 'FIT'
 
@@ -252,6 +256,14 @@ class SF_OT_export(bpy.types.Operator, ExportHelper):
         if scene.seamfit.stage != 'EXPORT' or not rig or not garments or context.mode != 'OBJECT':
             self.report({'ERROR'}, "Open the export scene in Object Mode.")
             return {'CANCELLED'}
+        graph = context.evaluated_depsgraph_get()
+        try:
+            for obj in garments:
+                session.topology.verify(obj, obj.data)
+                session.topology.verify(obj, obj.evaluated_get(graph).data)
+        except ValueError as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
         items = [rig, *garments]
         hidden = [o.name for o in items if o.name not in context.view_layer.objects
                   or not o.visible_get(view_layer=context.view_layer) or o.hide_select]
@@ -265,6 +277,7 @@ class SF_OT_export(bpy.types.Operator, ExportHelper):
                 obj.select_set(True)
             return bpy.ops.export_scene.fbx(filepath=self.filepath, use_selection=True,
                                             object_types={'ARMATURE', 'MESH'}, add_leaf_bones=False,
+                                            use_mesh_modifiers_render=False, use_mesh_modifiers=False,
                                             bake_anim=False, axis_forward='-Z', axis_up='Y',
                                             path_mode='AUTO')
         finally:
@@ -322,51 +335,57 @@ class SF_PT_studio(bpy.types.Panel):
             box.prop(s, "body", text="")
             box.label(text="Clothing")
             box.prop(s, "garment", text="")
-            box.prop(s, "include_selected")
-            if s.include_selected:
-                try:
-                    for obj in session.inputs(context):
-                        box.label(text=obj.name, icon='MESH_DATA')
-                except ValueError:
-                    pass
-            box = layout.box()
-            box.prop(s, "show_guides", emboss=False, icon='TRIA_DOWN' if s.show_guides else 'TRIA_RIGHT')
-            if s.show_guides:
-                note(box, context, "For different proportions, pair landmarks such as cuffs, hips and hocks. Place guides on both sides.")
-                box.label(text=f"{len(s.guides)} guide pairs")
-                row = box.row(align=True)
-                row.enabled = bool(s.body and s.garment) and context.mode == 'OBJECT'
-                row.operator("seamfit.add_guide", icon='EYEDROPPER')
-                remove = row.row(align=True)
-                remove.enabled = bool(s.guides)
-                remove.operator("seamfit.remove_guide", text="", icon='LOOP_BACK')
+            action(layout, "seamfit.preview", 'MOD_CLOTH', bool(s.body and s.garment and s.body != s.garment))
+            note(layout, context, "Place the clothing around the body first. Fit keeps its original mesh layout.")
+            if s.include_selected and not s.advanced:
+                note(layout, context, "Extra selected meshes are included. See More fit options for the list.")
             box = layout.box()
             box.prop(s, "advanced", emboss=False, icon='TRIA_DOWN' if s.advanced else 'TRIA_RIGHT')
             if s.advanced:
+                box.prop(s, "include_selected")
+                if s.include_selected:
+                    try:
+                        for obj in session.inputs(context):
+                            box.label(text=obj.name, icon='MESH_DATA')
+                    except ValueError:
+                        pass
                 box.prop(s, "clearance")
                 box.prop(s, "conform", slider=True)
                 box.prop(s, "travel")
                 if s.body:
                     box.prop_search(s, "region", s.body, "vertex_groups")
-            note(layout, context, "Start with roughly aligned clothing. Preview bakes the visible shape and modifiers on copies.")
-            action(layout, "seamfit.preview", 'MOD_CLOTH', bool(s.body and s.garment and s.body != s.garment))
+                box.prop(s, "show_guides", emboss=False, icon='TRIA_DOWN' if s.show_guides else 'TRIA_RIGHT')
+                if s.show_guides:
+                    note(box, context, "For different proportions, pair landmarks such as cuffs, hips and hocks. Place guides on both sides.")
+                    box.label(text=f"{len(s.guides)} guide pairs")
+                    row = box.row(align=True)
+                    row.enabled = bool(s.body and s.garment) and context.mode == 'OBJECT'
+                    row.operator("seamfit.add_guide", icon='EYEDROPPER')
+                    remove = row.row(align=True)
+                    remove.enabled = bool(s.guides)
+                    remove.operator("seamfit.remove_guide", text="", icon='LOOP_BACK')
         elif s.stage == 'FIT':
             box = layout.box()
-            box.label(text="Inspect the fit", icon='VIEWZOOM')
-            note(box, context, "Orbit the avatar. You can edit the clothing mesh directly before transferring weights.")
-            note(box, context, f"Last check found {s.suspects:,} vertices inside the fit surface.", 'INFO' if s.suspects else 'CHECKMARK')
+            if s.suspects > 0:
+                note(box, context, f"Last check flagged {s.suspects:,} vertices inside the body or belonging to crossing faces.", 'ERROR')
+                action(box, "seamfit.relieve", 'MOD_DISPLACE')
+            elif s.suspects == 0:
+                note(box, context, "Last check found no body crossings or inside vertices. Inspect the waistband and hems.", 'CHECKMARK')
+            else:
+                note(box, context, "Inspect the fit, then check for clipping.")
             box.operator("seamfit.check", icon='VIEWZOOM')
-            box.prop(s, "clearance")
-            box.operator("seamfit.relieve", icon='MOD_DISPLACE')
-            box = layout.box()
-            box.label(text="Robust Weight Transfer", icon='GROUP_VERTEX')
             problem = session.rwt_status(context.scene)
             if problem:
-                note(box, context, problem, 'INFO')
-                box.operator("wm.url_open", text="Get Robust Weight Transfer", icon='URL').url = RWT_RELEASE
-            else:
-                box.prop(s, "match_distance")
+                note(layout, context, problem, 'INFO')
+                layout.operator("wm.url_open", text="Get Robust Weight Transfer", icon='URL').url = RWT_RELEASE
             action(layout, "seamfit.finish", 'ARMATURE_DATA', not problem)
+            details = layout.box()
+            details.prop(s, "advanced", text="Adjust fit or transfer", emboss=False, icon='TRIA_DOWN' if s.advanced else 'TRIA_RIGHT')
+            if s.advanced:
+                details.prop(s, "clearance")
+                if s.suspects <= 0:
+                    details.operator("seamfit.relieve", icon='MOD_DISPLACE')
+                details.prop(s, "match_distance")
         else:
             garments = session.clothes(context.scene)
             box = layout.box()

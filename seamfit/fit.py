@@ -8,7 +8,8 @@ def body_surface(body, region=""):
     mesh = body.data
     matrix = body.matrix_world
     coords = [matrix @ v.co for v in mesh.vertices]
-    faces = [tuple(p.vertices) for p in mesh.polygons]
+    mesh.calc_loop_triangles()
+    faces = [tuple(t.vertices) for t in mesh.loop_triangles]
     if region:
         group = body.vertex_groups.get(region)
         if group is None:
@@ -20,7 +21,14 @@ def body_surface(body, region=""):
         raise ValueError("The fit region has no faces. Choose a larger region or clear it.")
     if matrix.to_3x3().determinant() < 0:
         faces = [tuple(reversed(face)) for face in faces]
-    return BVHTree.FromPolygons(coords, faces)
+    return Surface(coords, faces)
+
+
+class Surface:
+    def __init__(self, coords, faces):
+        self.coords = coords
+        self.faces = faces
+        self.tree = BVHTree.FromPolygons(coords, faces)
 
 
 def guide_positions(points, guides):
@@ -40,7 +48,7 @@ def guide_positions(points, guides):
 
 
 def signed_gap(point, tree):
-    contact, normal, _, distance = tree.find_nearest(point)
+    contact, normal, _, distance = tree.tree.find_nearest(point)
     if contact is None:
         raise ValueError("The body has no usable surface near the garment.")
     along_normal = (point - contact).dot(normal)
@@ -78,9 +86,61 @@ def adjust(obj, tree, settings, guides=(), tighten=True):
         p += normal * min(budget, max(0, settings.clearance - gap))
         vert.co = inverse @ p
     mesh.update()
+    repair_crossings(obj, tree, positions, settings)
+
+
+def crossings(obj, surface):
+    mesh = obj.data
+    mesh.calc_loop_triangles()
+    points = [obj.matrix_world @ v.co for v in mesh.vertices]
+    triangles = [tuple(t.vertices) for t in mesh.loop_triangles]
+    tree = BVHTree.FromPolygons(points, triangles, all_triangles=True)
+    return points, triangles, tree.overlap(surface.tree)
+
+
+def repair_crossings(obj, surface, origins, settings):
+    # A coarse face can cut the body even when every corner is outside.
+    # Translate its corners together so the patch keeps its local shape.
+    inverse = obj.matrix_world.inverted()
+    points, triangles, hits = crossings(obj, surface)
+    for _ in range(4):
+        if not hits:
+            break
+        shifts = {}
+        for ti, bi in hits:
+            ids = triangles[ti]
+            a, b, c = (points[i] for i in ids)
+            normal = (b - a).cross(c - a).normalized()
+            body = [surface.coords[i] for i in surface.faces[bi]]
+            bn = (body[1] - body[0]).cross(body[2] - body[0])
+            if normal.dot(bn) < 0:
+                normal.negate()
+            depth = max((q - a).dot(normal) for q in body)
+            step = min(max(0, depth) + max(settings.clearance, 1e-5),
+                       0.3 * max((b-a).length, (c-a).length))
+            for i in ids:
+                if i not in shifts or step > shifts[i][0]:
+                    shifts[i] = step, normal
+        old = {i: obj.data.vertices[i].co.copy() for i in shifts}
+        for i, (step, normal) in shifts.items():
+            origin = Vector(origins[i])
+            delta = points[i] + normal * step - origin
+            if delta.length > settings.travel:
+                delta = delta.normalized() * settings.travel
+            obj.data.vertices[i].co = inverse @ (origin + delta)
+        obj.data.update()
+        points, triangles, next_hits = crossings(obj, surface)
+        if len(next_hits) >= len(hits):
+            for i, co in old.items():
+                obj.data.vertices[i].co = co
+            obj.data.update()
+            break
+        hits = next_hits
 
 
 def suspect_vertices(obj, tree):
-    matrix = obj.matrix_world
-    return [v.index for v in obj.data.vertices
-            if signed_gap(matrix @ v.co, tree)[0] < -1e-5]
+    points, triangles, hits = crossings(obj, tree)
+    flagged = {i for i, point in enumerate(points) if signed_gap(point, tree)[0] < -1e-5}
+    for ti, _ in hits:
+        flagged.update(triangles[ti])
+    return sorted(flagged)

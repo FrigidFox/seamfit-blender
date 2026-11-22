@@ -1,5 +1,6 @@
 import bpy
 import math
+from . import topology
 from .fit import body_surface, adjust, suspect_vertices
 
 ROLE = "_seamfit_role"
@@ -50,14 +51,19 @@ def make_rig(scene, original, *, output=False):
 
 
 def snapshot(scene, obj, graph, role, *, output=False):
+    if role == "clothing":
+        mesh, stamp = topology.clothing_mesh(obj, graph, output=output)
+    else:
+        mesh = bpy.data.meshes.new_from_object(obj.evaluated_get(graph), preserve_all_data_layers=True, depsgraph=graph)
     evaluated = obj.evaluated_get(graph)
-    mesh = bpy.data.meshes.new_from_object(evaluated, preserve_all_data_layers=True, depsgraph=graph)
     source_name = obj.get("_seamfit_source", obj.name)
     suffix = " • Fitted" if output else " • Preview"
     result = bpy.data.objects.new(source_name + (suffix if role == "clothing" else " • Reference"), mesh)
     result["_seamfit_source"] = source_name
     scene.collection.objects.link(result)
     result[ROLE] = role
+    if role == "clothing":
+        result[topology.STAMP] = stamp
     result.matrix_world = evaluated.matrix_world.copy()
     if not mesh.polygons or abs(result.matrix_world.to_3x3().determinant()) < 1e-12:
         raise ValueError(f"{obj.name} needs faces and a nonzero object scale.")
@@ -138,7 +144,8 @@ def preview(context):
         tree = body_surface(p.body, p.region)
         for obj in garments:
             adjust(obj, tree, p, s.guides)
-        p.suspects = sum(len(suspect_vertices(o, tree)) for o in garments)
+        whole_body = body_surface(p.body) if p.region else tree
+        p.suspects = sum(len(suspect_vertices(o, whole_body)) for o in garments)
         set_active(context, garments[0])
     except Exception:
         context.window.scene = source
@@ -226,6 +233,7 @@ def finish(context):
             if 'FINISHED' not in status:
                 raise ValueError("Weight transfer stopped. Check Match distance and loose garment pieces.")
             clean_weights(obj, r.rig)
+            topology.verify(obj, obj.data)
             bind(obj, r.rig)
         cfg.source_object = None
         mesh = body.data
