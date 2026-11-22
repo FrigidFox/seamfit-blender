@@ -2,7 +2,7 @@
 
 Fit clothing to a rigged VRChat avatar, transfer skin weights with SentFromSpaceVR’s Robust Weight Transfer, and export a clothing-only FBX with the target skeleton.
 
-**[Download the Blender installer](https://raw.githubusercontent.com/FrigidFox/seamfit-blender/downloads/seamfit-0.2.0.zip)** · [Illustrated workflow guide](https://github.com/FrigidFox/seamfit-blender/blob/downloads/Seamfit-Workflow-0.2.0.pdf) · [Example Blender scene](https://raw.githubusercontent.com/FrigidFox/seamfit-blender/downloads/Hock-gaiter.blend)
+**[Download the Blender installer](https://raw.githubusercontent.com/FrigidFox/seamfit-blender/downloads/seamfit-0.2.1.zip)** · [Illustrated workflow guide](https://github.com/FrigidFox/seamfit-blender/blob/downloads/Seamfit-Workflow-0.2.0.pdf) · [Example Blender scene](https://raw.githubusercontent.com/FrigidFox/seamfit-blender/downloads/Hock-gaiter.blend)
 
 ## Fitting shorts
 
@@ -10,9 +10,16 @@ Choose **Avatar body** and **Clothing**, roughly position the waistband and leg 
 
 The fitted copy keeps the source garment’s indexed vertices, edges and face loops. Subdivision Surface is skipped when obtaining the garment’s original cage. Other modifiers that change connectivity trigger a message before the fit proceeds. The body reference still uses its visible surface. The current garment shape-key mix is baked. A new fit from the source is required for the topology checks when updating an older review scene.
 
+### Keeping the lining or hem still
+
+1. To keep the original shape of a lining, click **Return to source** if you are already in Review. Position the shorts around the avatar.
+2. In Setup, choose the shorts as **Clothing** and click **Choose protected faces**. Blender opens face selection. Orbit underneath a leg opening and select the inner faces you want to keep still. Shift-click to add faces.
+3. Click **Save protected faces**, then **Fit clothing**. Seamfit holds every corner of the selected faces at its starting position, including any corner shared with the outer fabric. Leave a row of free faces where you want the fabric to bend.
+4. In Review, **Fix clipping** adjusts the free fabric. **Recheck fit** still counts intersections on the lining and shows how many flagged vertices are protected. Inspect those from underneath. You can choose protected faces again in Review to hold their current shape for later repairs. To clear protection, deselect all faces and save.
+
 ## First fitting
 
-1. In Blender 5.1, open Edit → Preferences → Get Extensions. In the top-right menu, choose **Install from Disk** and select seamfit-0.2.0.zip.
+1. In Blender 5.1, open Edit → Preferences → Get Extensions. In the top-right menu, choose **Install from Disk** and select seamfit-0.2.1.zip.
 2. Install the author's **robust-weight-transfer-libigl26.zip** for Blender 5.1. Follow the dependency installation prompt in its **SENT** sidebar and restart Blender if prompted. [Upstream download](https://github.com/sentfromspacevr/robust-weight-transfer/releases/tag/v1.1.9) · [Author's tutorial](https://jinxxy.com/SentFromSpaceVR/robust-weight-transfer)
 3. Open Hock-gaiter.blend to try the included digitigrade example, or open your avatar in its bind pose. In the 3D Viewport press **N**, then open **Seamfit**. The example already has its body and clothing assigned.
 4. On your own avatar, choose the target body mesh and garment. The body needs one enabled Armature modifier with deform weights. Place the clothing roughly around the corresponding body part. For a multi-piece outfit, open **More fit options**, enable **Include other selected meshes** and check the displayed list.

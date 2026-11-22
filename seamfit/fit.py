@@ -2,6 +2,17 @@
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 import numpy as np
+from . import topology
+
+PIN_IDS = "_seamfit_fixed_vertices"
+PIN_STAMP = "_seamfit_fixed_layout"
+
+
+def fixed_vertices(obj):
+    ids = obj.get(PIN_IDS, ())
+    if len(ids) and obj.get(PIN_STAMP) != topology.fingerprint(obj.data):
+        raise ValueError(f"{obj.name}: the mesh layout changed. Choose the protected faces again.")
+    return set(ids)
 
 
 def body_surface(body, region=""):
@@ -61,8 +72,13 @@ def adjust(obj, tree, settings, guides=(), tighten=True):
     mesh = obj.data
     original = np.array([matrix @ v.co for v in mesh.vertices])
     positions = guide_positions(original, guides)
-    offsets = np.empty_like(positions)
+    fixed = fixed_vertices(obj)
+    mask = np.zeros(len(positions), dtype=bool)
+    mask[list(fixed)] = True
+    offsets = np.zeros_like(positions)
     for i, p in enumerate(positions):
+        if mask[i]:
+            continue
         gap, normal = signed_gap(Vector(p), tree)
         travel = settings.clearance - gap
         if travel < 0:
@@ -77,16 +93,18 @@ def adjust(obj, tree, settings, guides=(), tighten=True):
         summed = np.zeros_like(offsets)
         np.add.at(summed, left, offsets[right])
         np.add.at(summed, right, offsets[left])
-        linked = counts > 0
+        linked = (counts > 0) & ~mask
         offsets[linked] = 0.6 * offsets[linked] + 0.4 * summed[linked] / counts[linked, None]
     for i, vert in enumerate(mesh.vertices):
+        if mask[i]:
+            continue
         p = Vector(positions[i] + offsets[i])
         gap, normal = signed_gap(p, tree)
         budget = max(0, settings.travel - float(np.linalg.norm(offsets[i])))
         p += normal * min(budget, max(0, settings.clearance - gap))
         vert.co = inverse @ p
     mesh.update()
-    repair_crossings(obj, tree, positions, settings)
+    repair_crossings(obj, tree, positions, settings, fixed)
 
 
 def crossings(obj, surface):
@@ -98,17 +116,21 @@ def crossings(obj, surface):
     return points, triangles, tree.overlap(surface.tree)
 
 
-def repair_crossings(obj, surface, origins, settings):
+def repair_crossings(obj, surface, origins, settings, fixed):
     # A coarse face can cut the body even when every corner is outside.
     # Translate its corners together so the patch keeps its local shape.
     inverse = obj.matrix_world.inverted()
     points, triangles, hits = crossings(obj, surface)
+    best_count = len(hits)
+    pending = {}
     for _ in range(4):
         if not hits:
             break
         shifts = {}
         for ti, bi in hits:
             ids = triangles[ti]
+            if all(i in fixed for i in ids):
+                continue
             a, b, c = (points[i] for i in ids)
             normal = (b - a).cross(c - a).normalized()
             body = [surface.coords[i] for i in surface.faces[bi]]
@@ -119,9 +141,15 @@ def repair_crossings(obj, surface, origins, settings):
             step = min(max(0, depth) + max(settings.clearance, 1e-5),
                        0.3 * max((b-a).length, (c-a).length))
             for i in ids:
+                if i in fixed:
+                    continue
                 if i not in shifts or step > shifts[i][0]:
                     shifts[i] = step, normal
-        old = {i: obj.data.vertices[i].co.copy() for i in shifts}
+        if not shifts:
+            break
+        for i in shifts:
+            if i not in pending:
+                pending[i] = obj.data.vertices[i].co.copy()
         for i, (step, normal) in shifts.items():
             origin = Vector(origins[i])
             delta = points[i] + normal * step - origin
@@ -130,12 +158,18 @@ def repair_crossings(obj, surface, origins, settings):
             obj.data.vertices[i].co = inverse @ (origin + delta)
         obj.data.update()
         points, triangles, next_hits = crossings(obj, surface)
-        if len(next_hits) >= len(hits):
-            for i, co in old.items():
-                obj.data.vertices[i].co = co
-            obj.data.update()
+        if len(next_hits) < best_count:
+            best_count = len(next_hits)
+            pending.clear()
+        elif not fixed:
             break
+        # A face with a fixed corner can need several small rotations before
+        # the number of intersections drops. Keep only a verified improvement.
         hits = next_hits
+    if pending:
+        for i, co in pending.items():
+            obj.data.vertices[i].co = co
+        obj.data.update()
 
 
 def suspect_vertices(obj, tree):

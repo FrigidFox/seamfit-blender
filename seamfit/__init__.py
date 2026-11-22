@@ -1,12 +1,13 @@
 import textwrap
 import traceback
+import bmesh
 import bpy
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, FloatProperty,
                        FloatVectorProperty, IntProperty, PointerProperty, StringProperty)
 from bpy_extras import view3d_utils
 from bpy_extras.io_utils import ExportHelper
 from . import guides, session
-from .fit import adjust, body_surface, suspect_vertices
+from .fit import adjust, body_surface, PIN_IDS, PIN_STAMP
 
 RWT_RELEASE = "https://github.com/sentfromspacevr/robust-weight-transfer/releases/tag/v1.1.9"
 
@@ -49,6 +50,7 @@ class SF_Settings(bpy.types.PropertyGroup):
     picked_point: FloatVectorProperty(size=3, options={'SKIP_SAVE'})
     origin: PointerProperty(type=bpy.types.Scene)
     rig: PointerProperty(type=bpy.types.Object)
+    fixed_suspects: IntProperty(default=0)
     suspects: IntProperty(default=-1)
     advanced: BoolProperty(name="More fit options", default=False)
     show_guides: BoolProperty(name="Alignment guides", default=False)
@@ -158,6 +160,80 @@ class SF_Action:
         return {'FINISHED'}
 
 
+def protection_target(context):
+    s = context.scene.seamfit
+    obj = context.active_object
+    if s.stage == 'SETUP':
+        if s.include_selected and obj and obj.type == 'MESH' and obj != s.body and obj.select_get():
+            return obj
+        return s.garment
+    if s.stage == 'FIT' and obj and obj.get(session.ROLE) == "clothing":
+        return obj
+    return None
+
+
+class SF_OT_protect(bpy.types.Operator):
+    bl_idname = "seamfit.protect"
+    bl_label = "Choose protected faces"
+    bl_description = "Select lining or hem faces to hold in place during fitting and clipping repair"
+    bl_options = {'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = protection_target(context)
+        return obj is not None and obj.name in context.view_layer.objects and (
+            context.mode == 'OBJECT' or (context.mode == 'EDIT_MESH' and
+            len(context.objects_in_mode) == 1 and context.edit_object == obj))
+
+    def execute(self, context):
+        obj = protection_target(context)
+        if context.mode == 'OBJECT':
+            others = [o for o in context.selected_objects if o != obj]
+            stored = obj.get(PIN_STAMP)
+            reuse = bool(stored) and stored == session.topology.fingerprint(obj.data)
+            session.set_active(context, obj)
+            bpy.ops.object.mode_set(mode='EDIT')
+            for other in others:
+                other.select_set(True)
+            bpy.ops.mesh.select_mode(type='FACE')
+            bpy.ops.mesh.select_all(action='DESELECT')
+            mesh = bmesh.from_edit_mesh(obj.data)
+            if reuse:
+                fixed = set(obj.get(PIN_IDS, ()))
+                for face in mesh.faces:
+                    if not face.hide and all(v.index in fixed for v in face.verts):
+                        face.select_set(True)
+                bmesh.update_edit_mesh(obj.data, destructive=False)
+        else:
+            bpy.ops.object.mode_set(mode='OBJECT')
+            fixed = sorted({i for face in obj.data.polygons if face.select and not face.hide for i in face.vertices})
+            if fixed:
+                obj[PIN_IDS] = fixed
+                obj[PIN_STAMP] = session.topology.fingerprint(obj.data)
+            else:
+                obj.pop(PIN_IDS, None)
+                obj.pop(PIN_STAMP, None)
+            if context.scene.seamfit.stage == 'FIT':
+                context.scene.seamfit.suspects = -1
+        return {'FINISHED'}
+
+
+def protection_controls(layout, context):
+    obj = protection_target(context)
+    if obj is None:
+        return
+    editing = context.mode == 'EDIT_MESH'
+    count = len(obj.get(PIN_IDS, ()))
+    label = "Save protected faces" if editing else "Choose protected faces"
+    if context.scene.seamfit.include_selected:
+        layout.label(text=obj.name)
+    layout.operator("seamfit.protect", text=label, icon='LOCKED')
+    if editing:
+        note(layout, context, "Select the faces to keep still, then save. An empty selection clears protection.")
+    elif count:
+        layout.label(text=f"{count:,} protected vertices")
+
+
 class SF_OT_preview(SF_Action, bpy.types.Operator):
     bl_idname = "seamfit.preview"
     bl_label = "Fit clothing"
@@ -177,11 +253,8 @@ class SF_OT_check(SF_Action, bpy.types.Operator):
     def run(self, context):
         s = context.scene.seamfit
         tree = body_surface(s.body)
-        total = 0
         first = None
-        for obj in session.clothes(context.scene):
-            flagged = set(suspect_vertices(obj, tree))
-            total += len(flagged)
+        for obj, flagged in session.check_clothing(session.clothes(context.scene), tree, s):
             for poly in obj.data.polygons:
                 poly.select = False
             for edge in obj.data.edges:
@@ -190,7 +263,6 @@ class SF_OT_check(SF_Action, bpy.types.Operator):
                 v.select = v.index in flagged
             if flagged and first is None:
                 first = obj
-        s.suspects = total
         if first:
             session.set_active(context, first)
             context.tool_settings.mesh_select_mode = (True, False, False)
@@ -209,10 +281,11 @@ class SF_OT_relieve(SF_Action, bpy.types.Operator):
         for obj in session.clothes(context.scene):
             adjust(obj, tree, s, tighten=False)
         whole_body = body_surface(s.body) if s.region else tree
-        remaining = sum(len(suspect_vertices(o, whole_body)) for o in session.clothes(context.scene))
-        if remaining and remaining >= s.suspects > 0:
+        previous = s.suspects
+        session.check_clothing(session.clothes(context.scene), whole_body, s)
+        remaining = s.suspects
+        if remaining and remaining >= previous > 0:
             self.report({'WARNING'}, "Some fabric still crosses the body. Click Recheck fit and enter Edit Mode to adjust the selected area.")
-        s.suspects = remaining
 
 
 class SF_OT_finish(SF_Action, bpy.types.Operator):
@@ -322,7 +395,7 @@ class SF_PT_studio(bpy.types.Panel):
             box = layout.box()
             box.alert = True
             note(box, context, s.message, 'ERROR')
-        if context.mode != 'OBJECT':
+        if context.mode != 'OBJECT' and not (context.mode == 'EDIT_MESH' and SF_OT_protect.poll(context)):
             note(layout, context, "Return to Object Mode to continue.", 'INFO')
         if s.stage == 'SETUP':
             if session.rwt_status(context.scene):
@@ -335,6 +408,7 @@ class SF_PT_studio(bpy.types.Panel):
             box.prop(s, "body", text="")
             box.label(text="Clothing")
             box.prop(s, "garment", text="")
+            protection_controls(box, context)
             action(layout, "seamfit.preview", 'MOD_CLOTH', bool(s.body and s.garment and s.body != s.garment))
             note(layout, context, "Place the clothing around the body first. Fit keeps its original mesh layout.")
             if s.include_selected and not s.advanced:
@@ -368,12 +442,15 @@ class SF_PT_studio(bpy.types.Panel):
             box = layout.box()
             if s.suspects > 0:
                 note(box, context, f"Last check flagged {s.suspects:,} vertices inside the body or belonging to crossing faces.", 'ERROR')
-                action(box, "seamfit.relieve", 'MOD_DISPLACE')
+                if s.fixed_suspects:
+                    note(box, context, f"{s.fixed_suspects:,} flagged vertices are protected and stay in place.")
+                action(box, "seamfit.relieve", 'MOD_DISPLACE', s.fixed_suspects < s.suspects)
             elif s.suspects == 0:
                 note(box, context, "Last check found no body crossings or inside vertices. Inspect the waistband and hems.", 'CHECKMARK')
             else:
                 note(box, context, "Inspect the fit, then check for clipping.")
             box.operator("seamfit.check", icon='VIEWZOOM')
+            protection_controls(box, context)
             problem = session.rwt_status(context.scene)
             if problem:
                 note(layout, context, problem, 'INFO')
@@ -400,7 +477,7 @@ class SF_PT_studio(bpy.types.Panel):
             layout.operator("seamfit.source", icon='BACK')
 
 
-CLASSES = (SF_Guide, SF_Settings, SF_OT_guide, SF_OT_remove_guide, SF_OT_preview,
+CLASSES = (SF_Guide, SF_Settings, SF_OT_guide, SF_OT_remove_guide, SF_OT_protect, SF_OT_preview,
            SF_OT_check, SF_OT_relieve, SF_OT_finish, SF_OT_source, SF_OT_export, SF_PT_studio)
 
 

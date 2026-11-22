@@ -84,3 +84,9 @@ Release SHA-256: 5b8b6d11ede6f57da887ace49140e190912eee3604ce076e4dadfbe06959995
 ## November 22, 2026 — GitHub publication
 
 Published the existing main branch history to FrigidFox/seamfit-blender and created release v0.2.0 from 42bde74. Blender 5.1.2 validated the installer again. GitHub rejected direct release asset uploads, so the release and README link to files on the separate downloads branch. An anonymous HTTPS download of the installer matched the tested ZIP byte for byte and reproduced the SHA-256 recorded above. See the previous entry for the Blender regression results and remaining avatar and Unity checks.
+
+## November 22, 2026 — Protected clothing faces (0.2.1)
+
+Setup and Review can now store a selection of garment face corners on the object, guarded by the cage fingerprint. Guides, surface offsets, smoothing and face crossing repairs leave those vertices exactly in place. Review counts protected vertices among the suspects. Saving an empty selection clears protection. A constrained crossing fixture exposed a repair that stopped before the free corners cleared the body. Repairs now allow bounded intermediate steps with pins and restore the best intersection count reached.
+
+Verified the installed ZIP on Blender 5.1.2/Linux with tests/protection.py, trial.py, tests/topology.py, tests/shorts.py, tests/recovery.py, tests/transforms.py and the native viewport guide test on display :93. The new fixture checks exact coordinates, shared corners, intentionally buried lining, selection edits and real binding. Validated the ZIP, compared its entries to the source and downloaded the identical ZIP from GitHub. SHA-256 bdc16e268ef4e32f364afe0bfb564d260964b2bf228a60191aadaeabdbca0f38. Next, inspect a real pair of lined shorts in rest pose and with bent legs. Auto-detection of lining and garment self-collision remain open.

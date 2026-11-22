@@ -1,7 +1,7 @@
 import bpy
 import math
 from . import topology
-from .fit import body_surface, adjust, suspect_vertices
+from .fit import body_surface, adjust, suspect_vertices, fixed_vertices, PIN_IDS, PIN_STAMP
 
 ROLE = "_seamfit_role"
 
@@ -64,6 +64,9 @@ def snapshot(scene, obj, graph, role, *, output=False):
     result[ROLE] = role
     if role == "clothing":
         result[topology.STAMP] = stamp
+        if not output and (fixed := fixed_vertices(obj)):
+            result[PIN_IDS] = sorted(fixed)
+            result[PIN_STAMP] = stamp
     result.matrix_world = evaluated.matrix_world.copy()
     if not mesh.polygons or abs(result.matrix_world.to_3x3().determinant()) < 1e-12:
         raise ValueError(f"{obj.name} needs faces and a nonzero object scale.")
@@ -118,6 +121,13 @@ def inputs(context):
     return objs
 
 
+def check_clothing(garments, surface, settings):
+    flagged = [(obj, set(suspect_vertices(obj, surface))) for obj in garments]
+    settings.suspects = sum(len(ids) for _, ids in flagged)
+    settings.fixed_suspects = sum(len(ids.intersection(fixed_vertices(obj))) for obj, ids in flagged)
+    return flagged
+
+
 def preview(context):
     source = context.scene
     s = source.seamfit
@@ -145,7 +155,7 @@ def preview(context):
         for obj in garments:
             adjust(obj, tree, p, s.guides)
         whole_body = body_surface(p.body) if p.region else tree
-        p.suspects = sum(len(suspect_vertices(o, whole_body)) for o in garments)
+        check_clothing(garments, whole_body, p)
         set_active(context, garments[0])
     except Exception:
         context.window.scene = source
