@@ -13,14 +13,14 @@ bpy.ops.wm.open_mainfile(filepath=str(ROOT / "Hock-gaiter.blend"))
 s = bpy.context.scene.seamfit
 obj = s.garment
 s.body.select_set(True)
-assert bpy.ops.seamfit.protect() == {'FINISHED'}
+assert bpy.ops.seamfit.protect(follow_shell=False) == {'FINISHED'}
 bm = bmesh.from_edit_mesh(obj.data)
 bm.faces.ensure_lookup_table()
 face = bm.faces[10]
 fixed = {v.index for v in face.verts}
 face.select_set(True)
 bmesh.update_edit_mesh(obj.data, destructive=False)
-assert bpy.ops.seamfit.protect() == {'FINISHED'}
+assert bpy.ops.seamfit.protect(follow_shell=False) == {'FINISHED'}
 assert s.body.select_get()
 assert sf.fit.fixed_vertices(obj) == fixed
 before = [v.co[:] for v in obj.data.vertices]
@@ -37,11 +37,11 @@ for _ in range(2):
     assert all(fit.data.vertices[i].co[:] == before[i] for i in fixed)
 assert bpy.ops.seamfit.check() == {'FINISHED'}
 assert bpy.context.scene.seamfit.fixed_suspects == sum(fit.data.vertices[i].select for i in fixed)
-assert bpy.ops.seamfit.protect() == {'FINISHED'}
+assert bpy.ops.seamfit.protect(follow_shell=False) == {'FINISHED'}
 bm = bmesh.from_edit_mesh(fit.data)
 assert {v.index for f in bm.faces if f.select for v in f.verts} == fixed
 bpy.ops.mesh.select_all(action='DESELECT')
-assert bpy.ops.seamfit.protect() == {'FINISHED'}
+assert bpy.ops.seamfit.protect(follow_shell=False) == {'FINISHED'}
 assert not sf.fit.fixed_vertices(fit) and sf.fit.fixed_vertices(obj) == fixed
 assert bpy.ops.seamfit.finish() == {'FINISHED'}
 result = sf.session.clothes(bpy.context.scene)[0]

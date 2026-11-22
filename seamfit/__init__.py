@@ -6,7 +6,7 @@ from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, FloatProp
                        FloatVectorProperty, IntProperty, PointerProperty, StringProperty)
 from bpy_extras import view3d_utils
 from bpy_extras.io_utils import ExportHelper
-from . import guides, session
+from . import guides, session, lining
 from .fit import adjust, body_surface, PIN_IDS, PIN_STAMP
 
 RWT_RELEASE = "https://github.com/sentfromspacevr/robust-weight-transfer/releases/tag/v1.1.9"
@@ -50,6 +50,7 @@ class SF_Settings(bpy.types.PropertyGroup):
     picked_point: FloatVectorProperty(size=3, options={'SKIP_SAVE'})
     origin: PointerProperty(type=bpy.types.Scene)
     rig: PointerProperty(type=bpy.types.Object)
+    lining_suspects: IntProperty(default=0)
     fixed_suspects: IntProperty(default=0)
     suspects: IntProperty(default=-1)
     advanced: BoolProperty(name="More fit options", default=False)
@@ -174,8 +175,9 @@ def protection_target(context):
 
 class SF_OT_protect(bpy.types.Operator):
     bl_idname = "seamfit.protect"
-    bl_label = "Choose protected faces"
-    bl_description = "Select lining or hem faces to hold in place during fitting and clipping repair"
+    bl_label = "Choose lining faces"
+    follow_shell: BoolProperty(default=True, options={'SKIP_SAVE', 'HIDDEN'})
+    bl_description = "Select inner faces that should follow the outer layer"
     bl_options = {'UNDO'}
 
     @classmethod
@@ -207,6 +209,8 @@ class SF_OT_protect(bpy.types.Operator):
         else:
             bpy.ops.object.mode_set(mode='OBJECT')
             fixed = sorted({i for face in obj.data.polygons if face.select and not face.hide for i in face.vertices})
+            lining.clear_binding(obj)
+            obj[lining.FOLLOW] = bool(fixed and self.follow_shell)
             if fixed:
                 obj[PIN_IDS] = fixed
                 obj[PIN_STAMP] = session.topology.fingerprint(obj.data)
@@ -224,14 +228,17 @@ def protection_controls(layout, context):
         return
     editing = context.mode == 'EDIT_MESH'
     count = len(obj.get(PIN_IDS, ()))
-    label = "Save protected faces" if editing else "Choose protected faces"
+    label = "Save lining faces" if editing else "Choose lining faces"
     if context.scene.seamfit.include_selected:
         layout.label(text=obj.name)
-    layout.operator("seamfit.protect", text=label, icon='LOCKED')
+    layout.operator("seamfit.protect", text=label, icon='MOD_SOLIDIFY').follow_shell = True
     if editing:
-        note(layout, context, "Select the faces to keep still, then save. An empty selection clears protection.")
+        note(layout, context, "Select the inner layer only, then save. Leave the outside and connecting rim unselected.")
     elif count:
-        layout.label(text=f"{count:,} protected vertices")
+        if obj.get(lining.FOLLOW):
+            layout.label(text=f"{count:,} vertices follow the outer fabric")
+        else:
+            note(layout, context, "Old fixed selection: choose lining faces and save to make it follow.")
 
 
 class SF_OT_preview(SF_Action, bpy.types.Operator):
@@ -442,6 +449,8 @@ class SF_PT_studio(bpy.types.Panel):
             box = layout.box()
             if s.suspects > 0:
                 note(box, context, f"Last check flagged {s.suspects:,} vertices inside the body or belonging to crossing faces.", 'ERROR')
+                if s.lining_suspects:
+                    note(box, context, f"{s.lining_suspects:,} are on the lining. Adjust the outer fit or clearance to give it room.")
                 if s.fixed_suspects:
                     note(box, context, f"{s.fixed_suspects:,} flagged vertices are protected and stay in place.")
                 action(box, "seamfit.relieve", 'MOD_DISPLACE', s.fixed_suspects < s.suspects)

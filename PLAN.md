@@ -34,3 +34,5 @@ Deliver a guided Blender 5.1 extension for fitting VRChat clothing to an avatar 
 With a licensed target body, armature and source garment, record the exact asset version, rest pose, shape-key mix, garment type, chosen landmarks and fit settings. Inspect the rest fit and at least one representative joint bend. Compare silhouette and clipping before and after fitting, then import the exported FBX into Unity. Record per-avatar evidence in PROGRESS.md. Repeat for the remaining bases as assets become available. The original digitigrade example is the regression baseline.
 
 Version 0.2.0 supersedes the evaluated-garment snapshot and vertex-only clipping design above. Garment connectivity is checked against the original cage, collision checks include face crossings, and advanced fit and transfer controls are collapsed by default.
+
+Version 0.2.2 fits marked lining as a second layer of the same garment. Its vertices follow persistent points on the outer cage through automatic fitting and repairs. Validate the correspondence on a licensed pair of lined shorts, especially the inseam, pockets and leg openings, then check layer spacing while posing the exported garment.

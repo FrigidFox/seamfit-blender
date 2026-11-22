@@ -1,6 +1,7 @@
 import bpy
 import math
-from . import topology
+import numpy as np
+from . import topology, lining
 from .fit import body_surface, adjust, suspect_vertices, fixed_vertices, PIN_IDS, PIN_STAMP
 
 ROLE = "_seamfit_role"
@@ -67,6 +68,7 @@ def snapshot(scene, obj, graph, role, *, output=False):
         if not output and (fixed := fixed_vertices(obj)):
             result[PIN_IDS] = sorted(fixed)
             result[PIN_STAMP] = stamp
+            result[lining.FOLLOW] = bool(obj.get(lining.FOLLOW))
     result.matrix_world = evaluated.matrix_world.copy()
     if not mesh.polygons or abs(result.matrix_world.to_3x3().determinant()) < 1e-12:
         raise ValueError(f"{obj.name} needs faces and a nonzero object scale.")
@@ -124,7 +126,15 @@ def inputs(context):
 def check_clothing(garments, surface, settings):
     flagged = [(obj, set(suspect_vertices(obj, surface))) for obj in garments]
     settings.suspects = sum(len(ids) for _, ids in flagged)
-    settings.fixed_suspects = sum(len(ids.intersection(fixed_vertices(obj))) for obj, ids in flagged)
+    pinned = following = 0
+    for obj, ids in flagged:
+        count = len(ids.intersection(fixed_vertices(obj)))
+        if obj.get(lining.FOLLOW):
+            following += count
+        else:
+            pinned += count
+    settings.fixed_suspects = pinned
+    settings.lining_suspects = following
     return flagged
 
 
@@ -229,7 +239,7 @@ def finish(context):
         cfg.enforce_four_bone_limit = True
         cfg.num_limit_groups = 4
         context.view_layer.update()
-        for obj in copies:
+        for obj, preview_obj in zip(copies, garments):
             obj.vertex_groups.clear()
             set_active(context, obj)
             # Surface mode supports tiny accessories below the point-cloud neighbor count.
@@ -242,6 +252,11 @@ def finish(context):
                 raise ValueError(f"Transfer failed on {obj.name}. Check the fit of loose parts or increase Match distance, then retry.") from exc
             if 'FINISHED' not in status:
                 raise ValueError("Weight transfer stopped. Check Match distance and loose garment pieces.")
+            if preview_obj.get(lining.FOLLOW) and (followers := sorted(fixed_vertices(preview_obj))):
+                if lining.TRIANGLES not in preview_obj:
+                    points = np.array([preview_obj.matrix_world @ v.co for v in preview_obj.data.vertices])
+                    lining.anchors(preview_obj, points, followers)
+                lining.follow_weights(obj, preview_obj, followers)
             clean_weights(obj, r.rig)
             topology.verify(obj, obj.data)
             bind(obj, r.rig)

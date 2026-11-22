@@ -2,7 +2,7 @@
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 import numpy as np
-from . import topology
+from . import topology, lining
 
 PIN_IDS = "_seamfit_fixed_vertices"
 PIN_STAMP = "_seamfit_fixed_layout"
@@ -73,6 +73,18 @@ def adjust(obj, tree, settings, guides=(), tighten=True):
     original = np.array([matrix @ v.co for v in mesh.vertices])
     positions = guide_positions(original, guides)
     fixed = fixed_vertices(obj)
+    followers = sorted(fixed) if obj.get(lining.FOLLOW) else []
+    clearance = np.full(len(original), settings.clearance)
+    if followers:
+        indices, weights = lining.anchors(obj, original, followers)
+        anchor = np.einsum("ij,ijk->ik", weights, original[indices])
+        guided_anchor = np.einsum("ij,ijk->ik", weights, positions[indices])
+        normals = np.array([signed_gap(Vector(p), tree)[1] for p in guided_anchor])
+        depth = ((anchor - original[followers]) * normals).sum(axis=1)
+        # Allow the supporting outer patch to clear the body with its lining.
+        for corner in range(3):
+            used = weights[:, corner] > 1e-6
+            np.maximum.at(clearance, indices[used, corner], settings.clearance + depth[used])
     mask = np.zeros(len(positions), dtype=bool)
     mask[list(fixed)] = True
     offsets = np.zeros_like(positions)
@@ -80,7 +92,7 @@ def adjust(obj, tree, settings, guides=(), tighten=True):
         if mask[i]:
             continue
         gap, normal = signed_gap(Vector(p), tree)
-        travel = settings.clearance - gap
+        travel = clearance[i] - gap
         if travel < 0:
             travel *= settings.conform if tighten else 0
         offsets[i] = np.asarray(normal) * np.clip(travel, -settings.travel, settings.travel)
@@ -88,7 +100,10 @@ def adjust(obj, tree, settings, guides=(), tighten=True):
     edges = np.empty(len(mesh.edges) * 2, dtype=np.int32)
     mesh.edges.foreach_get("vertices", edges)
     left, right = edges[::2], edges[1::2]
-    counts = np.bincount(edges, minlength=len(positions))
+    if followers:
+        exterior = ~(mask[left] | mask[right])
+        left, right = left[exterior], right[exterior]
+    counts = np.bincount(np.concatenate((left, right)), minlength=len(positions))
     for _ in range(3):
         summed = np.zeros_like(offsets)
         np.add.at(summed, left, offsets[right])
@@ -101,26 +116,30 @@ def adjust(obj, tree, settings, guides=(), tighten=True):
         p = Vector(positions[i] + offsets[i])
         gap, normal = signed_gap(p, tree)
         budget = max(0, settings.travel - float(np.linalg.norm(offsets[i])))
-        p += normal * min(budget, max(0, settings.clearance - gap))
+        p += normal * min(budget, max(0, clearance[i] - gap))
         vert.co = inverse @ p
     mesh.update()
-    repair_crossings(obj, tree, positions, settings, fixed)
+    repair_crossings(obj, tree, positions, settings, fixed, outer_only=bool(followers))
+    if followers:
+        lining.follow(obj, original, followers, indices, weights)
 
 
-def crossings(obj, surface):
+def crossings(obj, surface, exclude=()):
     mesh = obj.data
     mesh.calc_loop_triangles()
     points = [obj.matrix_world @ v.co for v in mesh.vertices]
     triangles = [tuple(t.vertices) for t in mesh.loop_triangles]
+    if exclude:
+        triangles = [tri for tri in triangles if not any(i in exclude for i in tri)]
     tree = BVHTree.FromPolygons(points, triangles, all_triangles=True)
     return points, triangles, tree.overlap(surface.tree)
 
 
-def repair_crossings(obj, surface, origins, settings, fixed):
+def repair_crossings(obj, surface, origins, settings, fixed, *, outer_only=False):
     # A coarse face can cut the body even when every corner is outside.
     # Translate its corners together so the patch keeps its local shape.
     inverse = obj.matrix_world.inverted()
-    points, triangles, hits = crossings(obj, surface)
+    points, triangles, hits = crossings(obj, surface, fixed if outer_only else ())
     best_count = len(hits)
     pending = {}
     for _ in range(4):
@@ -157,7 +176,7 @@ def repair_crossings(obj, surface, origins, settings, fixed):
                 delta = delta.normalized() * settings.travel
             obj.data.vertices[i].co = inverse @ (origin + delta)
         obj.data.update()
-        points, triangles, next_hits = crossings(obj, surface)
+        points, triangles, next_hits = crossings(obj, surface, fixed if outer_only else ())
         if len(next_hits) < best_count:
             best_count = len(next_hits)
             pending.clear()
