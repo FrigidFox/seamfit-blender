@@ -1,12 +1,16 @@
-# Local build products, downloaded runtimes and validation scratch files.
-/*
-!/.gitignore
-!/AGENTS.md
-!/PLAN.md
-!/PROGRESS.md
-!/seamfit/
-!/trial.py
-!/tests/
-!/README.md
+# Local Blender distributions and third-party test dependencies.
+/blender-*-linux-x64/
+/blender*.tar.xz
+/clean-profile/
+/rwt-deps/
+/upstream/
+/uv-cache/
+/xserver/
+/xvfb.deb
+# Generated test and UI evidence.
+/qa/
+/Hock-gaiter.blend*
+/test-outfit.fbx
+/*.log
 __pycache__/
 *.pyc

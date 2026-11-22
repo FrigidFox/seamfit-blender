@@ -2,13 +2,10 @@ import sys, math, os, importlib
 from pathlib import Path
 import bpy
 from mathutils import Vector, Euler
-root = Path('/workspace')
-sys.path[:0] = [str(root/'work/rwt-deps'), str(root/'work/upstream'), str(root/'work')]
-import seamfit as sf
-sf.register()
-rwt = importlib.import_module('robust-weight-transfer-libigl26')
-assert not rwt.missing_deps
-rwt.register()
+root = Path(__file__).resolve().parent
+sys.path.insert(0, str(root / "tests"))
+from runtime import load_addons
+sf = load_addons()
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 scene=bpy.context.scene
@@ -113,7 +110,7 @@ for area in bpy.context.screen.areas:
                 try:region.active_panel_category='Seamfit'
                 except Exception: pass
 bpy.context.preferences.filepaths.save_version=0
-bpy.ops.wm.save_as_mainfile(filepath=str(root/'work/Hock-gaiter.blend'),compress=True)
+bpy.ops.wm.save_as_mainfile(filepath=str(root/'Hock-gaiter.blend'),compress=True)
 before=sf.session.suspect_vertices(garment,sf.session.body_surface(body))
 assert len(before)>50
 source_points=[v.co.copy() for v in garment.data.vertices]
@@ -144,7 +141,7 @@ bpy.context.view_layer.update()
 assert max((a-b).length for a,b in zip(rest,evaluated_coords(out)))>.02
 pb.rotation_euler.x=0;bpy.context.view_layer.update()
 assert all((a-v.co).length<1e-8 for a,v in zip(source_points,garment.data.vertices))
-dest=str(root/'work/test-outfit.fbx')
+dest=str(root/'test-outfit.fbx')
 assert bpy.ops.seamfit.export(filepath=dest)=={'FINISHED'}
 assert Path(dest).stat().st_size>1000
 test=bpy.data.scenes.new('FBX roundtrip');bpy.context.window.scene=test
@@ -153,4 +150,4 @@ meshes=[o for o in test.objects if o.type=='MESH'];rigs=[o for o in test.objects
 assert len(meshes)==len(rigs)==1 and meshes[0].find_armature()==rigs[0]
 assert len(meshes[0].data.uv_layers)==1 and len(meshes[0].data.materials)==3
 assert set(rigs[0].data.bones.keys())==set(names)
-print('PASS',bpy.app.version_string, nverts,'vertices',len(before),'before;',fit.name if fit in [] else 'verified bend and FBX round trip', flush=True)
+print('PASS',bpy.app.version_string, nverts,'vertices',len(before),'before;','verified bend and FBX round trip', flush=True)

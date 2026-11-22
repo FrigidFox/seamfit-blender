@@ -22,3 +22,11 @@ From /workspace/work, run the following for the baseline in this environment.
     ./blender-5.1.2-linux-x64/blender --command extension validate ../output/seamfit-0.1.0.zip
 
 The test fixture is original generated geometry. Named avatar testing, Unity/VRChat import, other operating systems, large-outfit timings and human usability testing remain open.
+
+## November 21, 2026 — Installed-build recovery checks
+
+Repeated the one-garment pose and FBX round trip from the installed ZIP in the clean 5.1.2 profile. Added tests/runtime.py to resolve the installed extension and real upstream solver, with a source-checkout fallback. The fixture script now resolves its own directory. Added tests/recovery.py and ran it with SEAMFIT_REQUIRE_INSTALLED=1.
+
+Invalid region and posed-rig inputs produced actionable errors. Two selected pieces were fitted with a guide pair. Moving the second piece two Blender units away made the real upstream solver fail after transferring the first piece. Object, mesh, armature and scene counts returned to their pre-attempt values. Both preview pieces still had their original empty weight sets. Moving the piece back and retrying produced the two garments and rig with normalized weights. Return to source succeeded.
+
+Native UI automation reached all three panel stages. The first framebuffer captures were black, so visual layout verification is still pending. Continue by inspecting the alternate X11 captures, correcting any evidenced layout issue, and refreshing the package and handoff.
