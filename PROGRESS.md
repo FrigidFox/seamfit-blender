@@ -30,3 +30,11 @@ Repeated the one-garment pose and FBX round trip from the installed ZIP in the c
 Invalid region and posed-rig inputs produced actionable errors. Two selected pieces were fitted with a guide pair. Moving the second piece two Blender units away made the real upstream solver fail after transferring the first piece. Object, mesh, armature and scene counts returned to their pre-attempt values. Both preview pieces still had their original empty weight sets. Moving the piece back and retrying produced the two garments and rig with normalized weights. Return to source succeeded.
 
 Native UI automation reached all three panel stages. The first framebuffer captures were black, so visual layout verification is still pending. Continue by inspecting the alternate X11 captures, correcting any evidenced layout issue, and refreshing the package and handoff.
+
+## November 21, 2026 — Native UI and transformed-avatar verification
+
+Inspected actual X11 captures of Setup, Review and Export. Stacked the two object-picker labels to avoid truncation at the default sidebar width. Preview and output meshes now have distinct names, and transfer errors identify the affected garment with a retry action. Added checks for a changed review rig and for hidden or unselectable outfit objects at export.
+
+The rebuilt ZIP installed in the isolated Blender 5.1.2 profile. The example and two-piece rollback tests passed again. tests/transforms.py verified evaluated body shape-key mix on a translated, rotated and nonuniformly scaled rig, matching world-space output in bind pose and refusal to write an incomplete FBX with a hidden garment. tests/guides_ui.py drove two native viewport mouse clicks on the example and verified creation, redraw and removal of their guide pair. The first guide-test assertion incorrectly subtracted Blender property arrays; converting those arrays to vectors corrected the test and the rerun passed.
+
+Added installation, example, fitting and recovery instructions in README.md. The next step is to verify the distribution and portable Git checkpoint, then continue with representative avatar asset testing when licensed inputs are available.

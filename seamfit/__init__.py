@@ -253,6 +253,11 @@ class SF_OT_export(bpy.types.Operator, ExportHelper):
             self.report({'ERROR'}, "Open the export scene in Object Mode.")
             return {'CANCELLED'}
         items = [rig, *garments]
+        hidden = [o.name for o in items if o.name not in context.view_layer.objects
+                  or not o.visible_get(view_layer=context.view_layer) or o.hide_select]
+        if hidden:
+            self.report({'ERROR'}, "Show and unlock all outfit objects before export: " + ", ".join(hidden))
+            return {'CANCELLED'}
         selected, active = list(context.selected_objects), context.view_layer.objects.active
         try:
             session.set_active(context, rig)
@@ -275,7 +280,7 @@ def note(layout, context, text, icon='NONE'):
     lines = textwrap.wrap(text, width=max(18, int((width - 50) / 7.5)))
     column = layout.column(align=True)
     for i, line in enumerate(lines):
-        column.label(text=line, icon=icon if i == 0 else 'BLANK1')
+        column.label(text=line, icon=icon if i == 0 or icon == 'NONE' else 'BLANK1')
 
 
 def action(layout, identifier, icon, enabled=True):
@@ -313,8 +318,10 @@ class SF_PT_studio(bpy.types.Panel):
                 setup.operator("wm.url_open", text="5.1 dependency download", icon='URL').url = RWT_RELEASE
             box = layout.box()
             box.label(text="Choose your meshes", icon='OUTLINER_OB_MESH')
-            box.prop(s, "body")
-            box.prop(s, "garment")
+            box.label(text="Avatar body")
+            box.prop(s, "body", text="")
+            box.label(text="Clothing")
+            box.prop(s, "garment", text="")
             box.prop(s, "include_selected")
             if s.include_selected:
                 try:

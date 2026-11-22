@@ -33,11 +33,14 @@ def target_rig(body):
     return rig
 
 
-def make_rig(scene, original):
+def make_rig(scene, original, *, output=False):
     data = original.data.copy()
     data.animation_data_clear()
     data.pose_position = 'POSE'
-    rig = bpy.data.objects.new(original.name if original.get(ROLE) == "rig" else original.name + " • Fit", data)
+    source_name = original.get("_seamfit_source", original.name)
+    suffix = " • Outfit" if output else " • Preview"
+    rig = bpy.data.objects.new(source_name + suffix, data)
+    rig["_seamfit_source"] = source_name
     scene.collection.objects.link(rig)
     rig.matrix_world = original.matrix_world.copy()
     rig.display_type = 'WIRE'
@@ -46,10 +49,13 @@ def make_rig(scene, original):
     return rig
 
 
-def snapshot(scene, obj, graph, role):
+def snapshot(scene, obj, graph, role, *, output=False):
     evaluated = obj.evaluated_get(graph)
     mesh = bpy.data.meshes.new_from_object(evaluated, preserve_all_data_layers=True, depsgraph=graph)
-    result = bpy.data.objects.new(obj.name if obj.get(ROLE) else obj.name + (" • Fit" if role == "clothing" else " • Reference"), mesh)
+    source_name = obj.get("_seamfit_source", obj.name)
+    suffix = " • Fitted" if output else " • Preview"
+    result = bpy.data.objects.new(source_name + (suffix if role == "clothing" else " • Reference"), mesh)
+    result["_seamfit_source"] = source_name
     scene.collection.objects.link(result)
     result[ROLE] = role
     result.matrix_world = evaluated.matrix_world.copy()
@@ -178,18 +184,20 @@ def finish(context):
     garments = clothes(fit_scene)
     if not garments or not p.body or not p.rig:
         raise ValueError("The fitting objects are missing. Return to the source and rebuild the preview.")
+    if target_rig(p.body) != p.rig:
+        raise ValueError("Restore the preview body’s Armature modifier before finishing.")
     problem = rwt_status(fit_scene)
     if problem:
         raise ValueError(problem + ", then try again.")
     graph = context.evaluated_depsgraph_get()
-    result = fresh_scene(fit_scene, "Export • " + garments[0].name)
+    result = fresh_scene(fit_scene, "Export • " + garments[0].get("_seamfit_source", garments[0].name))
     try:
         r = result.seamfit
         r.stage = 'EXPORT'
         r.origin = p.origin
-        r.rig = make_rig(result, p.rig)
+        r.rig = make_rig(result, p.rig, output=True)
         body = snapshot(result, p.body, graph, "body")
-        copies = [snapshot(result, o, graph, "clothing") for o in garments]
+        copies = [snapshot(result, o, graph, "clothing", output=True) for o in garments]
         context.window.scene = result
         context.view_layer.update()
         bind(body, r.rig)
@@ -214,7 +222,7 @@ def finish(context):
             try:
                 status = bpy.ops.object.skin_weight_transfer('EXEC_DEFAULT')
             except RuntimeError as exc:
-                raise ValueError(f"Transfer failed on {obj.name}. Check alignment and Match distance in Review. {str(exc).splitlines()[0][:120]}") from exc
+                raise ValueError(f"Transfer failed on {obj.name}. Check the fit of loose parts or increase Match distance, then retry.") from exc
             if 'FINISHED' not in status:
                 raise ValueError("Weight transfer stopped. Check Match distance and loose garment pieces.")
             clean_weights(obj, r.rig)
