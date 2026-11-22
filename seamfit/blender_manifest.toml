@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+id = "seamfit"
+version = "0.1.0"
+name = "Seamfit"
+tagline = "Fit avatar clothing, transfer skin weights and export an outfit"
+maintainer = "Seamfit contributors"
+type = "add-on"
+tags = ["Mesh", "Rigging", "Import-Export"]
+blender_version_min = "5.1.0"
+license = ["SPDX:GPL-3.0-or-later"]
+
+[permissions]
+files = "Export the fitted outfit to an FBX file you choose"
+
+[build]
+paths_exclude_pattern = ["__pycache__/", "*.pyc"]

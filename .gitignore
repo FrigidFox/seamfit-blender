@@ -1,0 +1,12 @@
+# Local build products, downloaded runtimes and validation scratch files.
+/*
+!/.gitignore
+!/AGENTS.md
+!/PLAN.md
+!/PROGRESS.md
+!/seamfit/
+!/trial.py
+!/tests/
+!/README.md
+__pycache__/
+*.pyc
