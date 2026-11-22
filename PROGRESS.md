@@ -68,3 +68,7 @@ Each test prints PASS on completion. The graphical test requires a display. The 
 ### Handoff
 
 Start with AGENTS.md, git status and git log. The next product milestone is validation against representative licensed avatar/garment pairs and Unity import, as specified in PLAN.md. Report any regression on the original example separately from asset-specific fit tuning. Named avatars, other platforms and broad user testing remain unverified. The managed workspace exposes the delivered files in /workspace/output.
+
+## November 21, 2026 — Illustrated workflow guide
+
+Added review and pose-test instructions to README.md. Delivered Seamfit-Workflow.pdf in the output directory with three illustrated pages covering Setup, Review and Export. Checked control names against the panel, used the existing Blender 5.1.2 screenshots and verified the PDF has three pages with extractable text through the final scope note. The extension code and installer were unchanged. The next product milestone remains representative avatar and Unity validation.
